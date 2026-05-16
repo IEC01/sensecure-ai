@@ -1,0 +1,62 @@
+networks:
+  sensecure:
+    driver: bridge
+
+services:
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: sensecure_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ~/SenSecureAI/data:/app/data
+      - ~/SenSecureAI/logs:/app/logs
+      - ~/SenSecureAI/ml/models:/app/ml/models
+    networks:
+      - sensecure
+    restart: unless-stopped
+
+  sniffer:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.sniffer
+    container_name: sensecure_sniffer
+    network_mode: host
+    privileged: true
+    volumes:
+      - ~/SenSecureAI/data:/app/data
+    environment:
+      - IFACE=eth0
+      - DATA_DIR=/app/data
+    restart: unless-stopped
+
+  alerter:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: sensecure_alerter
+    volumes:
+      - ~/SenSecureAI/data:/app/data
+      - ~/SenSecureAI/logs:/app/logs
+      - ~/SenSecureAI/ml/models:/app/ml/models
+    networks:
+      - sensecure
+    command: python3 backend/alerter.py
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dashboard
+    container_name: sensecure_dashboard
+    ports:
+      - "3000:3000"
+    networks:
+      - sensecure
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    restart: unless-stopped
+
