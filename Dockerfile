@@ -12,7 +12,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./backend/
 COPY ml/ ./ml/
 COPY capture/ ./capture/
-COPY data/ ./data/
 
 ENV BASE=/app
 
