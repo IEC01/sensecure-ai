@@ -39,8 +39,14 @@ const css = `
   .field-label{font-family:'Share Tech Mono',monospace;font-size:10px;color:#00aa55;letter-spacing:1px;margin-bottom:4px}
   .field-input{background:rgba(0,255,100,0.05);border:1px solid rgba(0,255,100,0.3);color:#00ff88;font-family:'Share Tech Mono',monospace;font-size:13px;padding:6px 10px;outline:none;width:90px}
   .field-input:focus{border-color:#00ff88}
+  .field-input-full{background:rgba(0,255,100,0.05);border:1px solid rgba(0,255,100,0.3);color:#00ff88;font-family:'Share Tech Mono',monospace;font-size:13px;padding:8px 12px;outline:none;width:100%;margin-bottom:12px}
+  .field-input-full:focus{border-color:#00ff88}
   .scan-btn{background:rgba(0,255,100,0.1);border:1px solid #00ff88;color:#00ff88;font-family:'Orbitron',monospace;font-size:11px;letter-spacing:2px;padding:8px 18px;cursor:pointer;transition:all .2s}
   .scan-btn:hover{background:rgba(0,255,100,0.25);box-shadow:0 0 16px rgba(0,255,100,0.4)}
+  .scan-btn:disabled{opacity:0.5;cursor:not-allowed}
+  .scan-btn-full{background:rgba(0,255,100,0.1);border:1px solid #00ff88;color:#00ff88;font-family:'Orbitron',monospace;font-size:11px;letter-spacing:2px;padding:10px 18px;cursor:pointer;transition:all .2s;width:100%}
+  .scan-btn-full:hover{background:rgba(0,255,100,0.25)}
+  .logout-btn{background:rgba(255,51,68,0.1);border:1px solid #ff3344;color:#ff3344;font-family:'Orbitron',monospace;font-size:9px;letter-spacing:1px;padding:4px 10px;cursor:pointer}
   .result-bar{display:flex;align-items:center;gap:14px;background:rgba(0,255,100,0.04);border:1px solid rgba(0,255,100,0.2);padding:10px 16px;font-family:'Share Tech Mono',monospace;font-size:13px}
   .terminal{background:#000;border:1px solid rgba(0,255,100,0.2);padding:1rem;font-family:'Share Tech Mono',monospace;font-size:12px;max-height:160px;overflow-y:auto;line-height:1.7}
   .terminal::-webkit-scrollbar{width:4px}
@@ -55,6 +61,9 @@ const css = `
   .map-tip{position:absolute;background:#010a06;border:1px solid #00ff88;padding:8px 12px;font-family:'Share Tech Mono',monospace;font-size:11px;color:#00ff88;pointer-events:none;z-index:50;white-space:nowrap;transform:translate(-50%,-120%)}
   @keyframes ping{0%{r:6;opacity:1}100%{r:18;opacity:0}}
   .pulse{animation:ping 2s ease-out infinite}
+  .login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;position:relative;z-index:1}
+  .login-box{width:380px}
+  .user-info{font-family:'Share Tech Mono',monospace;font-size:11px;color:#00ff88;margin-top:4px}
 `;
 
 function getNiveau(score) {
@@ -70,37 +79,24 @@ function CustomTooltip({ active, payload }) {
   return null;
 }
 
-// Projection lat/lon → x,y sur une viewBox 800x400
 function latLonToXY(lat, lon, w=800, h=400) {
-  const x = ((lon + 180) / 360) * w;
-  const y = ((90 - lat) / 180) * h;
-  return { x, y };
+  return { x: ((lon+180)/360)*w, y: ((90-lat)/180)*h };
 }
 
 function WorldMap({ geoData }) {
   const [tooltip, setTooltip] = useState(null);
-
   return (
     <div className="map-wrap">
       <svg viewBox="0 0 800 400" style={{width:"100%",height:"100%"}}>
-        {/* Fond océan */}
         <rect width="800" height="400" fill="#000510"/>
-        {/* Continents simplifiés */}
         <g fill="rgba(0,255,100,0.08)" stroke="rgba(0,255,100,0.2)" strokeWidth="0.5">
-          {/* Amérique du Nord */}
           <path d="M80,60 L180,60 L200,80 L210,120 L190,160 L160,180 L130,200 L100,180 L80,150 L60,120 L70,80 Z"/>
-          {/* Amérique du Sud */}
           <path d="M130,210 L180,210 L200,240 L190,300 L160,340 L130,320 L110,280 L115,240 Z"/>
-          {/* Europe */}
           <path d="M340,60 L400,55 L420,70 L410,100 L380,110 L350,100 L330,80 Z"/>
-          {/* Afrique */}
           <path d="M340,115 L400,110 L420,140 L410,220 L380,260 L340,250 L320,220 L320,150 Z"/>
-          {/* Asie */}
           <path d="M420,50 L600,45 L640,80 L630,140 L580,160 L500,150 L450,130 L420,100 Z"/>
-          {/* Océanie */}
           <path d="M580,200 L650,195 L670,220 L650,250 L600,245 L575,225 Z"/>
         </g>
-        {/* Grille */}
         {[-60,-30,0,30,60].map(lat => {
           const {y} = latLonToXY(lat,0);
           return <line key={lat} x1="0" y1={y} x2="800" y2={y} stroke="rgba(0,255,100,0.06)" strokeWidth="0.5"/>;
@@ -109,61 +105,121 @@ function WorldMap({ geoData }) {
           const {x} = latLonToXY(0,lon);
           return <line key={lon} x1={x} y1="0" x2={x} y2="400" stroke="rgba(0,255,100,0.06)" strokeWidth="0.5"/>;
         })}
-        {/* Points géolocalisés */}
-        {geoData.map((d, i) => {
-          const {x, y} = latLonToXY(d.lat, d.lon);
+        {geoData.map((d,i) => {
+          const {x,y} = latLonToXY(d.lat,d.lon);
           const col = d.score < -0.70 ? "#ff3344" : d.score < -0.60 ? "#ffaa00" : "#00ff88";
           return (
-            <g key={i} className="map-point"
-              onMouseEnter={() => setTooltip({...d, x, y})}
-              onMouseLeave={() => setTooltip(null)}>
+            <g key={i} onMouseEnter={() => setTooltip({...d,x,y})} onMouseLeave={() => setTooltip(null)}>
               <circle cx={x} cy={y} r="12" fill={col} opacity="0.15" className="pulse"/>
               <circle cx={x} cy={y} r="5"  fill={col} opacity="0.8"/>
               <circle cx={x} cy={y} r="2"  fill="white"/>
             </g>
           );
         })}
-        {/* Ligne Sénégal → chaque IP */}
-        {geoData.map((d, i) => {
-          const src  = latLonToXY(14.6928, -17.4467); // Dakar
-          const dest = latLonToXY(d.lat, d.lon);
-          return (
-            <line key={i} x1={src.x} y1={src.y} x2={dest.x} y2={dest.y}
-              stroke="rgba(0,255,100,0.25)" strokeWidth="0.8" strokeDasharray="4,4"/>
-          );
+        {geoData.map((d,i) => {
+          const src  = latLonToXY(14.6928,-17.4467);
+          const dest = latLonToXY(d.lat,d.lon);
+          return <line key={i} x1={src.x} y1={src.y} x2={dest.x} y2={dest.y} stroke="rgba(0,255,100,0.25)" strokeWidth="0.8" strokeDasharray="4,4"/>;
         })}
-        {/* Point Dakar */}
-        <circle cx={latLonToXY(14.6928,-17.4467).x} cy={latLonToXY(14.6928,-17.4467).y}
-          r="6" fill="#00ff88" opacity="0.9"/>
-        <text x={latLonToXY(14.6928,-17.4467).x+8} y={latLonToXY(14.6928,-17.4467).y+4}
-          fill="#00ff88" fontSize="9" fontFamily="Share Tech Mono">DAKAR</text>
+        <circle cx={latLonToXY(14.6928,-17.4467).x} cy={latLonToXY(14.6928,-17.4467).y} r="6" fill="#00ff88" opacity="0.9"/>
+        <text x={latLonToXY(14.6928,-17.4467).x+8} y={latLonToXY(14.6928,-17.4467).y+4} fill="#00ff88" fontSize="9" fontFamily="Share Tech Mono">DAKAR</text>
       </svg>
-      {/* Tooltip */}
       {tooltip && (
-        <div className="map-tip" style={{left:tooltip.x/800*100+"%", top:tooltip.y/400*100+"%"}}>
-          IP: {tooltip.ip}<br/>
-          {tooltip.city}, {tooltip.country}<br/>
-          ISP: {tooltip.isp}<br/>
-          Score: {tooltip.score}
+        <div className="map-tip" style={{left:tooltip.x/800*100+"%",top:tooltip.y/400*100+"%"}}>
+          IP: {tooltip.ip}<br/>{tooltip.city}, {tooltip.country}<br/>ISP: {tooltip.isp}<br/>Score: {tooltip.score}
         </div>
       )}
     </div>
   );
 }
 
+function LoginPage({ onLogin }) {
+  const [user, setUser]     = useState("");
+  const [pass, setPass]     = useState("");
+  const [err, setErr]       = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleLogin() {
+    if (!user || !pass) { setErr("Remplissez tous les champs"); return; }
+    setLoading(true); setErr("");
+    try {
+      const res = await axios.post(`${API}/token`,
+        new URLSearchParams({ username: user, password: pass }),
+        { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+      );
+      onLogin(res.data);
+    } catch {
+      setErr("Identifiants incorrects");
+    }
+    setLoading(false);
+  }
+
+  return (
+    <>
+      <style>{css}</style>
+      <div className="scanline"/>
+      <div className="grid-bg"/>
+      <div className="login-wrap">
+        <div className="login-box">
+          <div style={{textAlign:"center",marginBottom:"2rem"}}>
+            <div className="logo-title">🛡 SENSECURE AI</div>
+            <div className="logo-sub">▸ THREAT DETECTION PLATFORM · UNCHK SÉNÉGAL</div>
+          </div>
+          <div className="full-panel">
+            <div className="panel-title">🔐 AUTHENTIFICATION REQUISE</div>
+            <div className="field-label">IDENTIFIANT</div>
+            <input className="field-input-full" type="text" value={user}
+              onChange={e => setUser(e.target.value)} placeholder="admin"
+              onKeyDown={e => e.key==="Enter" && handleLogin()}/>
+            <div className="field-label">MOT DE PASSE</div>
+            <input className="field-input-full" type="password" value={pass}
+              onChange={e => setPass(e.target.value)} placeholder="••••••••"
+              onKeyDown={e => e.key==="Enter" && handleLogin()}/>
+            {err && <div style={{color:"#ff3344",fontFamily:"Share Tech Mono",fontSize:12,marginBottom:12}}>⚠ {err}</div>}
+            <button className="scan-btn-full" onClick={handleLogin} disabled={loading}>
+              {loading ? "VÉRIFICATION..." : "▸ SE CONNECTER"}
+            </button>
+          </div>
+          <div style={{textAlign:"center",fontFamily:"Share Tech Mono",fontSize:10,color:"rgba(0,255,100,0.3)",marginTop:"1rem"}}>
+            SENSECURE AI v2.0 · ACCÈS RESTREINT · UNCHK SÉNÉGAL
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function App() {
-  const [stats, setStats]         = useState(null);
+  const [authUser, setAuthUser] = useState(null);
+  const [stats, setStats]       = useState(null);
   const [anomalies, setAnomalies] = useState([]);
-  const [flux, setFlux]           = useState([]);
-  const [analyse, setAnalyse]     = useState(null);
-  const [live, setLive]           = useState([]);
-  const [erreur, setErreur]       = useState("");
-  const [clock, setClock]         = useState(new Date().toLocaleTimeString());
-  const [geo, setGeo]             = useState([]);
-  const [form, setForm]           = useState({ proto:6, port_dst:3389, size:1500, ttl:64, freq:200, n_ports:30 });
+  const [flux, setFlux]         = useState([]);
+  const [analyse, setAnalyse]   = useState(null);
+  const [live, setLive]         = useState([]);
+  const [erreur, setErreur]     = useState("");
+  const [clock, setClock]       = useState(new Date().toLocaleTimeString());
+  const [geo, setGeo]           = useState([]);
+  const [form, setForm]         = useState({ proto:6, port_dst:3389, size:1500, ttl:64, freq:200, n_ports:30 });
   const wsRef = useRef(null);
 
+  function getHeaders() {
+    return authUser ? { headers: { Authorization: `Bearer ${authUser.access_token}` } } : {};
+  }
+
+  function handleLogin(data) {
+    setAuthUser(data);
+  }
+
+  function handleLogout() {
+    setAuthUser(null);
+    setStats(null); setAnomalies([]); setFlux([]); setGeo([]);
+    if (wsRef.current) wsRef.current.close();
+  }
+
+  
+// eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
+    if (!authUser) return;
     fetchAll();
     const iv  = setInterval(fetchAll, 10000);
     const tic = setInterval(() => setClock(new Date().toLocaleTimeString()), 1000);
@@ -172,15 +228,16 @@ export default function App() {
       try { const r = JSON.parse(e.data); setLive(p => [r,...p].slice(0,30)); } catch {}
     };
     return () => { clearInterval(iv); clearInterval(tic); wsRef.current?.close(); };
-  }, []);
+  }, [authUser]);
 
   async function fetchAll() {
     try {
+      const h = getHeaders();
       const [s,a,f,g] = await Promise.all([
-        axios.get(`${API}/stats`),
-        axios.get(`${API}/anomalies`),
-        axios.get(`${API}/flux?limit=40`),
-        axios.get(`${API}/geo`),
+        axios.get(`${API}/stats`, h),
+        axios.get(`${API}/anomalies`, h),
+        axios.get(`${API}/flux?limit=40`, h),
+        axios.get(`${API}/geo`, h),
       ]);
       if (s.data && !s.data.error) setStats(s.data);
       setAnomalies(Array.isArray(a.data) ? a.data : []);
@@ -191,9 +248,11 @@ export default function App() {
   }
 
   async function runAnalyse() {
-    try { const r = await axios.post(`${API}/analyse`, form); setAnalyse(r.data); }
+    try { const r = await axios.post(`${API}/analyse`, form, getHeaders()); setAnalyse(r.data); }
     catch { setErreur("ERR — ANALYSE FAILED"); }
   }
+
+  if (!authUser) return <LoginPage onLogin={handleLogin} />;
 
   return (
     <>
@@ -209,8 +268,10 @@ export default function App() {
           </div>
           <div style={{textAlign:"right"}}>
             <div className="status-live"><span className="dot"/>SURVEILLANCE ACTIVE</div>
-            <div style={{fontFamily:"Share Tech Mono",fontSize:11,color:"#00aa55",marginTop:6}}>
+            <div className="user-info">👤 {authUser.username} · {authUser.role?.toUpperCase()}</div>
+            <div style={{fontFamily:"Share Tech Mono",fontSize:11,color:"#00aa55",marginTop:4,display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end"}}>
               {new Date().toLocaleDateString()} · {clock}
+              <button className="logout-btn" onClick={handleLogout}>LOGOUT</button>
             </div>
           </div>
         </div>
@@ -232,7 +293,6 @@ export default function App() {
           ))}
         </div>
 
-        {/* Carte mondiale */}
         <div className="full-panel">
           <div className="panel-title">🌍 CARTE DES MENACES — {geo.length} IPs GÉOLOCALISÉES</div>
           <WorldMap geoData={geo}/>
@@ -329,7 +389,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="footer">SENSECURE AI v1.0 · UNCHK SÉNÉGAL · CYBERSECURITY INTELLIGENCE PLATFORM</div>
+        <div className="footer">SENSECURE AI v2.0 · UNCHK SÉNÉGAL · CYBERSECURITY INTELLIGENCE PLATFORM</div>
       </div>
     </>
   );
