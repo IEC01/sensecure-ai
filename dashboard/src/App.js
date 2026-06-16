@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from "recharts";
 import axios from "axios";
 
 const API = "http://localhost:8000";
@@ -11,20 +11,32 @@ const css = `
   .scanline{position:fixed;top:0;left:0;width:100%;height:100%;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,100,0.015) 2px,rgba(0,255,100,0.015) 4px);pointer-events:none;z-index:9999}
   .grid-bg{position:fixed;top:0;left:0;width:100%;height:100%;background-image:linear-gradient(rgba(0,255,100,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,100,0.04) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
   .app{position:relative;z-index:1;padding:1.5rem;max-width:1100px;margin:0 auto}
-  .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:2rem;padding-bottom:1rem;border-bottom:1px solid rgba(0,255,100,0.2)}
+  .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;padding-bottom:1rem;border-bottom:1px solid rgba(0,255,100,0.2)}
   .logo-title{font-family:'Orbitron',monospace;font-size:22px;font-weight:900;color:#00ff88;letter-spacing:3px;text-shadow:0 0 20px rgba(0,255,100,0.6)}
   .logo-sub{font-family:'Share Tech Mono',monospace;font-size:11px;color:#00aa55;letter-spacing:2px;margin-top:4px}
   .status-live{display:flex;align-items:center;gap:8px;font-family:'Share Tech Mono',monospace;font-size:12px;color:#00ff88;border:1px solid rgba(0,255,100,0.3);padding:6px 14px;background:rgba(0,255,100,0.05)}
+  .status-live.alert{color:#ff3344;border-color:rgba(255,51,68,0.5);background:rgba(255,51,68,0.08)}
   .dot{width:8px;height:8px;border-radius:50%;background:#00ff88;animation:blink 1.2s infinite}
+  .dot.red{background:#ff3344;animation:blink 0.5s infinite}
   @keyframes blink{0%,100%{opacity:1}50%{opacity:0.2}}
+
+  /* Tabs */
+  .tabs{display:flex;gap:8px;margin-bottom:1.5rem}
+  .tab{font-family:'Orbitron',monospace;font-size:12px;letter-spacing:2px;padding:10px 24px;cursor:pointer;border:1px solid rgba(0,255,100,0.2);background:rgba(0,255,100,0.02);color:#00aa55;transition:all .2s}
+  .tab:hover{border-color:rgba(0,255,100,0.5);color:#00ff88}
+  .tab.active{background:rgba(0,255,100,0.12);border-color:#00ff88;color:#00ff88;box-shadow:0 0 12px rgba(0,255,100,0.2)}
+
   .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:1.5rem}
   .stat-card{border:1px solid rgba(0,255,100,0.2);padding:1rem;background:rgba(0,255,100,0.03);position:relative;overflow:hidden;transition:all .3s}
   .stat-card:hover{border-color:rgba(0,255,100,0.6);background:rgba(0,255,100,0.07)}
   .stat-card::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:#00ff88}
+  .stat-card.danger::before{background:#ff3344}
   .stat-label{font-family:'Share Tech Mono',monospace;font-size:10px;color:#00aa55;letter-spacing:2px;margin-bottom:6px}
   .stat-value{font-family:'Orbitron',monospace;font-size:26px;font-weight:700;color:#00ff88;text-shadow:0 0 10px rgba(0,255,100,0.4)}
   .stat-value.warn{color:#ffaa00;text-shadow:0 0 10px rgba(255,170,0,0.5)}
   .stat-value.danger{color:#ff3344;text-shadow:0 0 10px rgba(255,51,68,0.5)}
+  .stat-unit{font-family:'Share Tech Mono',monospace;font-size:10px;color:#00aa55;margin-top:2px}
+
   .panels{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem}
   .panel{border:1px solid rgba(0,255,100,0.2);background:rgba(0,8,4,0.9);padding:1.25rem}
   .panel-title{font-family:'Orbitron',monospace;font-size:11px;font-weight:700;color:#00ff88;letter-spacing:3px;margin-bottom:1rem;padding-bottom:.6rem;border-bottom:1px solid rgba(0,255,100,0.15)}
@@ -64,6 +76,13 @@ const css = `
   .login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;position:relative;z-index:1}
   .login-box{width:380px}
   .user-info{font-family:'Share Tech Mono',monospace;font-size:11px;color:#00ff88;margin-top:4px}
+
+  /* Gauges energie */
+  .gauge-wrap{display:flex;flex-direction:column;gap:4px}
+  .gauge-bar{width:100%;height:12px;background:rgba(0,255,100,0.08);border:1px solid rgba(0,255,100,0.2);border-radius:6px;overflow:hidden}
+  .gauge-fill{height:100%;border-radius:6px;transition:width .5s ease}
+  .gauge-label{font-family:'Share Tech Mono',monospace;font-size:10px;color:#00aa55;display:flex;justify-content:space-between}
+  .anomaly-chip{background:rgba(255,51,68,0.15);color:#ff3344;border:1px solid #ff3344;padding:3px 12px;font-family:'Share Tech Mono',monospace;font-size:12px;font-weight:700}
 `;
 
 function getNiveau(score) {
@@ -73,9 +92,17 @@ function getNiveau(score) {
   return { label:"NORMAL", cls:"normal" };
 }
 
+function getNiveauEnergie(niveau) {
+  const m = (niveau || "NORMAL").replace(/\u00e9/gi,"e").replace(/\u00c9/gi,"E").toUpperCase();
+  if (m.includes("CRITIQUE")) return { label:"CRITIQUE", cls:"critique" };
+  if (m.includes("ELEV"))     return { label:"ÉLEVÉ",    cls:"eleve" };
+  if (m.includes("MOYEN"))    return { label:"MOYEN",    cls:"moyen" };
+  return { label:"NORMAL", cls:"normal" };
+}
+
 function CustomTooltip({ active, payload }) {
   if (active && payload && payload.length)
-    return <div className="tooltip-box">SCORE: {payload[0].value}<br/>SRC: {payload[0].payload?.src}</div>;
+    return <div className="tooltip-box">{payload.map((p,i) => <div key={i}>{p.name}: {typeof p.value==="number"?p.value.toFixed(2):p.value}</div>)}</div>;
   return null;
 }
 
@@ -129,6 +156,22 @@ function WorldMap({ geoData }) {
           IP: {tooltip.ip}<br/>{tooltip.city}, {tooltip.country}<br/>ISP: {tooltip.isp}<br/>Score: {tooltip.score}
         </div>
       )}
+    </div>
+  );
+}
+
+function Gauge({ label, value, max, unit }) {
+  const pct = Math.min(((value||0) / max) * 100, 100);
+  const col = pct > 85 ? "#ff3344" : pct > 60 ? "#ffaa00" : "#00ff88";
+  return (
+    <div className="gauge-wrap">
+      <div className="gauge-label">
+        <span>{label}</span>
+        <span style={{color:col}}>{value!=null ? value.toFixed(1) : "—"} {unit}</span>
+      </div>
+      <div className="gauge-bar">
+        <div className="gauge-fill" style={{width:`${pct}%`,background:col}}/>
+      </div>
     </div>
   );
 }
@@ -189,60 +232,334 @@ function LoginPage({ onLogin }) {
   );
 }
 
+// ─── ONGLET CYBERSÉCURITÉ ───────────────────────────────────────────────────
+function CyberTab({ stats, anomalies, flux, geo, live, analyse, form, setForm, runAnalyse }) {
+  return (
+    <>
+      <div className="stats">
+        {[
+          { label:"FLUX CAPTURÉS",  value: stats?.total_flux,    cls:"" },
+          { label:"IPs UNIQUES",    value: stats?.ips_uniques,   cls:"" },
+          { label:"PORTS SCANNÉS",  value: stats?.ports_uniques, cls:"" },
+          { label:"ANOMALIES ML",   value: anomalies.length,     cls:"warn" },
+          { label:"SCORE MOYEN",    value: stats?.score_moyen,   cls: stats?.score_moyen > 1 ? "danger" : "" },
+        ].map((s,i) => (
+          <div key={i} className="stat-card">
+            <div className="stat-label">{s.label}</div>
+            <div className={`stat-value ${s.cls}`}>{s.value ?? "—"}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="full-panel">
+        <div className="panel-title">🌍 CARTE DES MENACES — {geo.length} IPs GÉOLOCALISÉES</div>
+        <WorldMap geoData={geo}/>
+        <div style={{display:"flex",gap:"1rem",marginTop:"8px",flexWrap:"wrap"}}>
+          {geo.map((g,i) => (
+            <div key={i} style={{fontFamily:"Share Tech Mono",fontSize:11,color:"#00aa55"}}>
+              <span style={{color: g.score < -0.65 ? "#ff3344" : "#ffaa00"}}>●</span>
+              {" "}{g.ip} · {g.city}, {g.country}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="panels">
+        <div className="panel">
+          <div className="panel-title">📡 TRAFIC RÉSEAU — SCORES</div>
+          {flux.length === 0
+            ? <div style={{color:"#00aa55",fontFamily:"Share Tech Mono",fontSize:12}}>NO DATA</div>
+            : <ResponsiveContainer width="100%" height={155}>
+                <AreaChart data={flux}>
+                  <defs>
+                    <linearGradient id="grd" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%"  stopColor="#00ff88" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#00ff88" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="i" hide/>
+                  <YAxis width={20} tick={{fill:"#00aa55",fontSize:10,fontFamily:"Share Tech Mono"}}/>
+                  <Tooltip content={<CustomTooltip/>}/>
+                  <Area type="monotone" dataKey="score" name="Score" stroke="#00ff88" strokeWidth={1.5} fill="url(#grd)" dot={false}/>
+                </AreaChart>
+              </ResponsiveContainer>
+          }
+        </div>
+
+        <div className="panel">
+          <div className="panel-title">⚠ ANOMALIES ML — {anomalies.length}</div>
+          <div style={{maxHeight:170,overflowY:"auto"}}>
+            {anomalies.length === 0
+              ? <div style={{color:"#00aa55",fontFamily:"Share Tech Mono",fontSize:12}}>NO ANOMALIES</div>
+              : anomalies.slice(0,8).map((a,i) => {
+                  const niv = getNiveau(a.score);
+                  return (
+                    <div key={i} className="alert-row">
+                      <span className={`badge ${niv.cls}`}>{niv.label}</span>
+                      <span style={{color:"#00ff88",flex:1}}>{a.src}</span>
+                      <span style={{color:"#ff3344",fontWeight:700}}>
+                        {typeof a.score==="number" ? a.score.toFixed(3) : a.score}
+                      </span>
+                    </div>
+                  );
+                })
+            }
+          </div>
+        </div>
+      </div>
+
+      <div className="full-panel">
+        <div className="panel-title">🔍 ANALYSE EN TEMPS RÉEL</div>
+        <div className="analyse-row">
+          {Object.entries(form).map(([k,v]) => (
+            <div key={k}>
+              <div className="field-label">{k.toUpperCase()}</div>
+              <input className="field-input" type="number" value={v}
+                onChange={e => setForm(f => ({...f,[k]:+e.target.value}))}/>
+            </div>
+          ))}
+          <button className="scan-btn" onClick={runAnalyse}>▸ SCAN</button>
+        </div>
+        {analyse && (
+          <div className="result-bar">
+            <span className={`badge ${getNiveau(analyse.score_iso ?? -0.4).cls}`}>{analyse.niveau}</span>
+            <span style={{color:"#00aa55"}}>PROBA ATTAQUE :</span>
+            <span style={{color:analyse.anomalie?"#ff3344":"#00ff88",fontWeight:700}}>
+              {analyse.proba_rf != null ? (analyse.proba_rf*100).toFixed(1)+"%" : analyse.score}
+            </span>
+            <span style={{color:analyse.anomalie?"#ff3344":"#00ff88"}}>
+              {analyse.anomalie ? "▸ ANOMALIE DÉTECTÉE" : "▸ TRAFIC NORMAL"}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="full-panel">
+        <div className="panel-title">💻 FLUX EN DIRECT — WEBSOCKET</div>
+        <div className="terminal">
+          {live.length === 0
+            ? <span className="t-normal">root@sensecure:~$ waiting..._</span>
+            : live.map((r,i) => (
+                <div key={i} className={r.suspicion>=3?"t-danger":r.suspicion>=1?"t-warn":"t-normal"}>
+                  [{r.ts?.slice(11,19)}] {r.src} → {r.dst} · port={r.port_dst} · score={r.suspicion}
+                  {r.suspicion>=3?" ⚠ CRITICAL":r.suspicion>=1?" ! WARNING":""}
+                </div>
+              ))
+          }
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── ONGLET ÉNERGIE ──────────────────────────────────────────────────────────
+function EnergyTab({ energyStats, energyAlertes, energyMesures, energyDerniere }) {
+  const hasAlerte = energyDerniere?.score >= 4;
+
+  return (
+    <>
+      {hasAlerte && (
+        <div className="error-bar" style={{display:"flex",alignItems:"center",gap:8}}>
+          <span className="dot red"/> ⚠ ANOMALIE ÉLECTRIQUE ACTIVE — {energyDerniere?.anomalies?.join(", ")}
+        </div>
+      )}
+
+      <div className="stats">
+        <div className={`stat-card ${energyDerniere?.tension > 250 || energyDerniere?.tension < 185 ? "danger" : ""}`}>
+          <div className="stat-label">TENSION</div>
+          <div className={`stat-value ${energyDerniere?.tension > 250 || energyDerniere?.tension < 185 ? "danger" : ""}`}>
+            {energyDerniere?.tension?.toFixed(0) ?? "—"}
+          </div>
+          <div className="stat-unit">VOLTS · nominal 220V</div>
+        </div>
+        <div className={`stat-card ${energyDerniere?.courant > 25 ? "danger" : ""}`}>
+          <div className="stat-label">COURANT</div>
+          <div className={`stat-value ${energyDerniere?.courant > 25 ? "danger" : ""}`}>
+            {energyDerniere?.courant?.toFixed(1) ?? "—"}
+          </div>
+          <div className="stat-unit">AMPÈRES · max 25A</div>
+        </div>
+        <div className={`stat-card ${energyDerniere?.puissance > 5000 ? "danger" : ""}`}>
+          <div className="stat-label">PUISSANCE</div>
+          <div className={`stat-value ${energyDerniere?.puissance > 5000 ? "danger" : ""}`}>
+            {energyDerniere?.puissance ? (energyDerniere.puissance/1000).toFixed(2) : "—"}
+          </div>
+          <div className="stat-unit">KILOWATTS</div>
+        </div>
+        <div className="stat-card danger">
+          <div className="stat-label">ANOMALIES</div>
+          <div className="stat-value danger">{energyStats?.anomalies ?? "—"}</div>
+          <div className="stat-unit">DÉTECTÉES</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">MESURES</div>
+          <div className="stat-value">{energyStats?.total_mesures ?? "—"}</div>
+          <div className="stat-unit">TOTAL</div>
+        </div>
+      </div>
+
+      {energyDerniere && Object.keys(energyDerniere).length > 0 && (
+        <div className="full-panel">
+          <div className="panel-title">⚡ ÉTAT EN TEMPS RÉEL — RÉSEAU ÉLECTRIQUE 220V/50Hz</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"1.5rem"}}>
+            <Gauge label="TENSION" value={energyDerniere.tension} max={300} unit="V"/>
+            <Gauge label="COURANT" value={energyDerniere.courant} max={60}  unit="A"/>
+            <Gauge label="PUISSANCE" value={energyDerniere.puissance/1000} max={15} unit="kW"/>
+          </div>
+          {energyDerniere.anomalies?.length > 0 && (
+            <div style={{marginTop:"1rem",display:"flex",gap:8,flexWrap:"wrap"}}>
+              {energyDerniere.anomalies.map((a,i) => (
+                <span key={i} className="anomaly-chip">🚨 {a}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="panels">
+        <div className="panel">
+          <div className="panel-title">📈 TENSION (V) — 60 dernières mesures</div>
+          {energyMesures.length === 0
+            ? <div style={{color:"#00aa55",fontFamily:"Share Tech Mono",fontSize:12}}>NO DATA</div>
+            : <ResponsiveContainer width="100%" height={155}>
+                <AreaChart data={energyMesures}>
+                  <defs>
+                    <linearGradient id="ge" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%"  stopColor="#00ff88" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#00ff88" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="i" hide/>
+                  <YAxis domain={[100,300]} width={35} tick={{fill:"#00aa55",fontSize:10,fontFamily:"Share Tech Mono"}}/>
+                  <Tooltip content={<CustomTooltip/>}/>
+                  <ReferenceLine y={250} stroke="#ff3344" strokeDasharray="3 3"/>
+                  <ReferenceLine y={185} stroke="#ff3344" strokeDasharray="3 3"/>
+                  <ReferenceLine y={220} stroke="#00ff88" strokeDasharray="2 2"/>
+                  <Area type="monotone" dataKey="tension" name="Tension V" stroke="#00ff88" strokeWidth={1.5} fill="url(#ge)" dot={false}/>
+                </AreaChart>
+              </ResponsiveContainer>
+          }
+        </div>
+
+        <div className="panel">
+          <div className="panel-title">⚡ PUISSANCE (kW) — 60 dernières mesures</div>
+          {energyMesures.length === 0
+            ? <div style={{color:"#00aa55",fontFamily:"Share Tech Mono",fontSize:12}}>NO DATA</div>
+            : <ResponsiveContainer width="100%" height={155}>
+                <BarChart data={energyMesures}>
+                  <XAxis dataKey="i" hide/>
+                  <YAxis width={35} tick={{fill:"#00aa55",fontSize:10,fontFamily:"Share Tech Mono"}}/>
+                  <Tooltip content={<CustomTooltip/>}/>
+                  <Bar dataKey="puissanceKw" name="Puissance kW" radius={[2,2,0,0]}>
+                    {energyMesures.map((e,i) => (
+                      <Cell key={i} fill={e.score>=6?"#ff3344":e.score>=3?"#ffaa00":"#00ff88"}/>
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+          }
+        </div>
+      </div>
+
+      <div className="full-panel">
+        <div className="panel-title">🚨 ALERTES ÉLECTRIQUES — {energyAlertes.length}</div>
+        <div style={{maxHeight:200,overflowY:"auto"}}>
+          {energyAlertes.length === 0
+            ? <div style={{color:"#00aa55",fontFamily:"Share Tech Mono",fontSize:12}}>NO ANOMALIES DETECTED</div>
+            : energyAlertes.slice().reverse().slice(0,15).map((a,i) => {
+                const niv = getNiveauEnergie(a.niveau);
+                return (
+                  <div key={i} className="alert-row">
+                    <span className={`badge ${niv.cls}`}>{niv.label}</span>
+                    <span style={{color:"#00aa55",width:80}}>{a.ts?.slice(11,19)}</span>
+                    <span style={{color:"#00ff88"}}>U={a.tension?.toFixed(0)}V</span>
+                    <span style={{color:"#00ff88"}}>I={a.courant?.toFixed(1)}A</span>
+                    <span style={{color:"#00ff88"}}>P={a.puissance?.toFixed(0)}W</span>
+                    <span style={{color:"#ff3344",flex:1}}>{a.anomalies?.join(", ")}</span>
+                  </div>
+                );
+              })
+          }
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function App() {
   const [authUser, setAuthUser] = useState(null);
+  const [tab, setTab]           = useState("cyber");
+
+  // Cyber state
   const [stats, setStats]       = useState(null);
   const [anomalies, setAnomalies] = useState([]);
   const [flux, setFlux]         = useState([]);
   const [analyse, setAnalyse]   = useState(null);
   const [live, setLive]         = useState([]);
+  const [geo, setGeo]           = useState([]);
+  const [form, setForm]         = useState({ duration:0, src_bytes:491, dst_bytes:0, count:511, serror_rate:1.0, dst_host_serror_rate:1.0 });
+
+  // Energy state
+  const [energyStats, setEnergyStats]     = useState(null);
+  const [energyAlertes, setEnergyAlertes] = useState([]);
+  const [energyMesures, setEnergyMesures] = useState([]);
+  const [energyDerniere, setEnergyDerniere] = useState(null);
+
   const [erreur, setErreur]     = useState("");
   const [clock, setClock]       = useState(new Date().toLocaleTimeString());
-  const [geo, setGeo]           = useState([]);
-  const [form, setForm]         = useState({ proto:6, port_dst:3389, size:1500, ttl:64, freq:200, n_ports:30 });
   const wsRef = useRef(null);
 
   function getHeaders() {
     return authUser ? { headers: { Authorization: `Bearer ${authUser.access_token}` } } : {};
   }
 
-  function handleLogin(data) {
-    setAuthUser(data);
-  }
+  function handleLogin(data) { setAuthUser(data); }
 
   function handleLogout() {
     setAuthUser(null);
     setStats(null); setAnomalies([]); setFlux([]); setGeo([]);
+    setEnergyStats(null); setEnergyAlertes([]); setEnergyMesures([]); setEnergyDerniere(null);
     if (wsRef.current) wsRef.current.close();
   }
 
-  
-// eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!authUser) return;
     fetchAll();
-    const iv  = setInterval(fetchAll, 10000);
+    const iv  = setInterval(fetchAll, 5000);
     const tic = setInterval(() => setClock(new Date().toLocaleTimeString()), 1000);
     wsRef.current = new WebSocket("ws://localhost:8000/ws");
     wsRef.current.onmessage = (e) => {
       try { const r = JSON.parse(e.data); setLive(p => [r,...p].slice(0,30)); } catch {}
     };
     return () => { clearInterval(iv); clearInterval(tic); wsRef.current?.close(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser]);
 
   async function fetchAll() {
     try {
       const h = getHeaders();
-      const [s,a,f,g] = await Promise.all([
+      const [s,a,f,g,es,ea,em,ed] = await Promise.all([
         axios.get(`${API}/stats`, h),
         axios.get(`${API}/anomalies`, h),
         axios.get(`${API}/flux?limit=40`, h),
         axios.get(`${API}/geo`, h),
+        axios.get(`${API}/energy/stats`, h),
+        axios.get(`${API}/energy/alertes`, h),
+        axios.get(`${API}/energy/mesures?limit=60`, h),
+        axios.get(`${API}/energy/derniere`, h),
       ]);
       if (s.data && !s.data.error) setStats(s.data);
       setAnomalies(Array.isArray(a.data) ? a.data : []);
       setFlux(Array.isArray(f.data) ? f.data.map((r,i) => ({ i, score: r.suspicion||0, src: r.src })) : []);
       setGeo(Array.isArray(g.data) ? g.data : []);
+
+      if (es.data && !es.data.error) setEnergyStats(es.data);
+      setEnergyAlertes(Array.isArray(ea.data) ? ea.data : []);
+      setEnergyMesures(Array.isArray(em.data) ? em.data.map((r,i) => ({
+        i, tension: r.tension, puissanceKw: (r.puissance||0)/1000, score: r.score||0
+      })) : []);
+      if (ed.data && !ed.data.error) setEnergyDerniere(ed.data);
+
       setErreur("");
     } catch { setErreur("ERR — API UNREACHABLE"); }
   }
@@ -254,6 +571,8 @@ export default function App() {
 
   if (!authUser) return <LoginPage onLogin={handleLogin} />;
 
+  const energyAlerte = energyDerniere?.score >= 4;
+
   return (
     <>
       <style>{css}</style>
@@ -264,10 +583,13 @@ export default function App() {
         <div className="header">
           <div>
             <div className="logo-title">🛡 SENSECURE AI</div>
-            <div className="logo-sub">▸ THREAT DETECTION PLATFORM · UNCHK SÉNÉGAL</div>
+            <div className="logo-sub">▸ THREAT &amp; ENERGY DETECTION PLATFORM · UNCHK SÉNÉGAL</div>
           </div>
           <div style={{textAlign:"right"}}>
-            <div className="status-live"><span className="dot"/>SURVEILLANCE ACTIVE</div>
+            <div className={`status-live ${tab==="energy" && energyAlerte ? "alert" : ""}`}>
+              <span className={`dot ${tab==="energy" && energyAlerte ? "red" : ""}`}/>
+              {tab==="energy" && energyAlerte ? "⚠ ANOMALIE ACTIVE" : "SURVEILLANCE ACTIVE"}
+            </div>
             <div className="user-info">👤 {authUser.username} · {authUser.role?.toUpperCase()}</div>
             <div style={{fontFamily:"Share Tech Mono",fontSize:11,color:"#00aa55",marginTop:4,display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end"}}>
               {new Date().toLocaleDateString()} · {clock}
@@ -276,120 +598,23 @@ export default function App() {
           </div>
         </div>
 
+        <div className="tabs">
+          <div className={`tab ${tab==="cyber" ? "active" : ""}`} onClick={() => setTab("cyber")}>🛡 CYBERSÉCURITÉ</div>
+          <div className={`tab ${tab==="energy" ? "active" : ""}`} onClick={() => setTab("energy")}>
+            ⚡ ÉNERGIE {energyAlerte && tab!=="energy" ? "🔴" : ""}
+          </div>
+        </div>
+
         {erreur && <div className="error-bar">⚠ {erreur}</div>}
 
-        <div className="stats">
-          {[
-            { label:"FLUX CAPTURÉS",  value: stats?.total_flux,    cls:"" },
-            { label:"IPs UNIQUES",    value: stats?.ips_uniques,   cls:"" },
-            { label:"PORTS SCANNÉS",  value: stats?.ports_uniques, cls:"" },
-            { label:"ANOMALIES ML",   value: anomalies.length,     cls:"warn" },
-            { label:"SCORE MOYEN",    value: stats?.score_moyen,   cls: stats?.score_moyen > 1 ? "danger" : "" },
-          ].map((s,i) => (
-            <div key={i} className="stat-card">
-              <div className="stat-label">{s.label}</div>
-              <div className={`stat-value ${s.cls}`}>{s.value ?? "—"}</div>
-            </div>
-          ))}
-        </div>
+        {tab === "cyber"
+          ? <CyberTab stats={stats} anomalies={anomalies} flux={flux} geo={geo} live={live}
+                       analyse={analyse} form={form} setForm={setForm} runAnalyse={runAnalyse}/>
+          : <EnergyTab energyStats={energyStats} energyAlertes={energyAlertes}
+                        energyMesures={energyMesures} energyDerniere={energyDerniere}/>
+        }
 
-        <div className="full-panel">
-          <div className="panel-title">🌍 CARTE DES MENACES — {geo.length} IPs GÉOLOCALISÉES</div>
-          <WorldMap geoData={geo}/>
-          <div style={{display:"flex",gap:"1rem",marginTop:"8px",flexWrap:"wrap"}}>
-            {geo.map((g,i) => (
-              <div key={i} style={{fontFamily:"Share Tech Mono",fontSize:11,color:"#00aa55"}}>
-                <span style={{color: g.score < -0.65 ? "#ff3344" : "#ffaa00"}}>●</span>
-                {" "}{g.ip} · {g.city}, {g.country}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="panels">
-          <div className="panel">
-            <div className="panel-title">📡 TRAFIC RÉSEAU — SCORES</div>
-            {flux.length === 0
-              ? <div style={{color:"#00aa55",fontFamily:"Share Tech Mono",fontSize:12}}>NO DATA</div>
-              : <ResponsiveContainer width="100%" height={155}>
-                  <AreaChart data={flux}>
-                    <defs>
-                      <linearGradient id="grd" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%"  stopColor="#00ff88" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#00ff88" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="i" hide/>
-                    <YAxis width={20} tick={{fill:"#00aa55",fontSize:10,fontFamily:"Share Tech Mono"}}/>
-                    <Tooltip content={<CustomTooltip/>}/>
-                    <Area type="monotone" dataKey="score" stroke="#00ff88" strokeWidth={1.5} fill="url(#grd)" dot={false}/>
-                  </AreaChart>
-                </ResponsiveContainer>
-            }
-          </div>
-
-          <div className="panel">
-            <div className="panel-title">⚠ ANOMALIES ML — {anomalies.length}</div>
-            <div style={{maxHeight:170,overflowY:"auto"}}>
-              {anomalies.length === 0
-                ? <div style={{color:"#00aa55",fontFamily:"Share Tech Mono",fontSize:12}}>NO ANOMALIES</div>
-                : anomalies.slice(0,8).map((a,i) => {
-                    const niv = getNiveau(a.score);
-                    return (
-                      <div key={i} className="alert-row">
-                        <span className={`badge ${niv.cls}`}>{niv.label}</span>
-                        <span style={{color:"#00ff88",flex:1}}>{a.src}</span>
-                        <span style={{color:"#ff3344",fontWeight:700}}>
-                          {typeof a.score==="number" ? a.score.toFixed(3) : a.score}
-                        </span>
-                      </div>
-                    );
-                  })
-              }
-            </div>
-          </div>
-        </div>
-
-        <div className="full-panel">
-          <div className="panel-title">🔍 ANALYSE EN TEMPS RÉEL</div>
-          <div className="analyse-row">
-            {Object.entries(form).map(([k,v]) => (
-              <div key={k}>
-                <div className="field-label">{k.toUpperCase()}</div>
-                <input className="field-input" type="number" value={v}
-                  onChange={e => setForm(f => ({...f,[k]:+e.target.value}))}/>
-              </div>
-            ))}
-            <button className="scan-btn" onClick={runAnalyse}>▸ SCAN</button>
-          </div>
-          {analyse && (
-            <div className="result-bar">
-              <span className={`badge ${getNiveau(analyse.score).cls}`}>{analyse.niveau}</span>
-              <span style={{color:"#00aa55"}}>SCORE ML :</span>
-              <span style={{color:analyse.anomalie?"#ff3344":"#00ff88",fontWeight:700}}>{analyse.score}</span>
-              <span style={{color:analyse.anomalie?"#ff3344":"#00ff88"}}>
-                {analyse.anomalie ? "▸ ANOMALIE DÉTECTÉE" : "▸ TRAFIC NORMAL"}
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div className="full-panel">
-          <div className="panel-title">💻 FLUX EN DIRECT — WEBSOCKET</div>
-          <div className="terminal">
-            {live.length === 0
-              ? <span className="t-normal">root@sensecure:~$ waiting..._</span>
-              : live.map((r,i) => (
-                  <div key={i} className={r.suspicion>=3?"t-danger":r.suspicion>=1?"t-warn":"t-normal"}>
-                    [{r.ts?.slice(11,19)}] {r.src} → {r.dst} · port={r.port_dst} · score={r.suspicion}
-                    {r.suspicion>=3?" ⚠ CRITICAL":r.suspicion>=1?" ! WARNING":""}
-                  </div>
-                ))
-            }
-          </div>
-        </div>
-
-        <div className="footer">SENSECURE AI v2.0 · UNCHK SÉNÉGAL · CYBERSECURITY INTELLIGENCE PLATFORM</div>
+        <div className="footer">SENSECURE AI v2.0 · UNCHK SÉNÉGAL · CYBERSECURITY &amp; ENERGY INTELLIGENCE PLATFORM</div>
       </div>
     </>
   );
