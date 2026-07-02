@@ -6,4 +6,4 @@ Plateforme intelligente de cybersécurité pour les institutions sénégalaises.
 ## Stack
 Python · Scapy · Scikit-learn · FastAPI · React · Docker
 ## Auteur
-Ousseynou Faye · UNCHK Sénégal
+Ousseynou FAYE · UNCHK Sénégal
